@@ -19,16 +19,40 @@ Supports **GPU (CUDA)** and **CPU** modes.
 
 ### 1. Clone or download the project
 
-Place the project files into a folder, for example `E:\Whispered\`.
+```bash
+git clone https://github.com/your-username/whispered.git
+cd whispered
+```
 
-### 2. Install Python dependencies
+Or download and extract the ZIP archive, then open a terminal in the project folder.
+
+### 2. Create a virtual environment (recommended)
+
+<details>
+<summary><b>🪟 Windows</b></summary>
 
 ```bash
-cd E:\Whispered
+python -m venv venv
+venv\Scripts\activate
+```
+</details>
+
+<details>
+<summary><b>🍎 macOS / Linux</b></summary>
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+</details>
+
+### 3. Install Python dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. Install PyTorch with GPU support (recommended)
+### 4. Install PyTorch with GPU support (optional — Windows/Linux only)
 
 By default, `pip install torch` installs the **CPU-only** version.  
 To use your NVIDIA GPU, install PyTorch with CUDA:
@@ -43,9 +67,37 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 > **Note:** Check your NVIDIA driver version with `nvidia-smi`. The CUDA version shown there must be ≥ the CUDA version in the PyTorch package (12.8).
 
-### 4. Install FFmpeg
+> **macOS:** GPU acceleration via CUDA is **not available** on macOS. On Apple Silicon (M1/M2/M3/M4), Whisper can use **MPS** (Metal Performance Shaders) for acceleration automatically. No extra steps needed — just install PyTorch normally via `requirements.txt`.
+
+### 5. Install FFmpeg
+
+<details>
+<summary><b>🪟 Windows</b></summary>
 
 Download from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html) and add to your system PATH.
+</details>
+
+<details>
+<summary><b>🍎 macOS</b></summary>
+
+```bash
+brew install ffmpeg
+```
+
+If you don't have Homebrew, install it first from [https://brew.sh](https://brew.sh).
+</details>
+
+<details>
+<summary><b>🐧 Linux</b></summary>
+
+```bash
+# Debian / Ubuntu
+sudo apt update && sudo apt install ffmpeg
+
+# Fedora
+sudo dnf install ffmpeg
+```
+</details>
 
 Verify it works:
 ```bash
@@ -56,17 +108,24 @@ ffmpeg -version
 
 ## ▶️ Running the Application
 
-### Option 1: Double-click the batch file
+<details>
+<summary><b>🪟 Windows</b></summary>
 
-```
-E:\Whispered\start.bat
-```
+**Option 1:** Double-click `start.bat` in the project folder.
 
-### Option 2: Run from the command line
+**Option 2:** Run from the command line:
+```bash
+python whispered.py
+```
+</details>
+
+<details>
+<summary><b>🍎 macOS / Linux</b></summary>
 
 ```bash
-python E:\Whispered\whispered.py
+python3 whispered.py
 ```
+</details>
 
 On first launch, the program will:
 1. **Create directories** — `source/`, `output/`, `models/` are created automatically
