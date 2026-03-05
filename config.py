@@ -5,9 +5,45 @@ import os
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SOURCE_DIR = os.path.join(BASE_DIR, "source")
-OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+_DEFAULT_SOURCE_DIR = os.path.join(BASE_DIR, "source")
+_DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
+
+# ─── Mutable source/output paths (can be changed at runtime) ────────────────
+SOURCE_DIR = _DEFAULT_SOURCE_DIR
+OUTPUT_DIR = _DEFAULT_OUTPUT_DIR
+
+
+def set_source_dir(path: str):
+    """Set custom source directory"""
+    global SOURCE_DIR
+    SOURCE_DIR = os.path.abspath(path)
+
+
+def set_output_dir(path: str):
+    """Set custom output directory"""
+    global OUTPUT_DIR
+    OUTPUT_DIR = os.path.abspath(path)
+
+
+def reset_source_dir():
+    """Reset source directory to default"""
+    global SOURCE_DIR
+    SOURCE_DIR = _DEFAULT_SOURCE_DIR
+
+
+def reset_output_dir():
+    """Reset output directory to default"""
+    global OUTPUT_DIR
+    OUTPUT_DIR = _DEFAULT_OUTPUT_DIR
+
+
+def get_source_dir() -> str:
+    return SOURCE_DIR
+
+
+def get_output_dir() -> str:
+    return OUTPUT_DIR
 
 # ─── Whisper Model ───────────────────────────────────────────────────────────
 # Available models: tiny, base, small, medium, large-v1, large-v2, large-v3, turbo

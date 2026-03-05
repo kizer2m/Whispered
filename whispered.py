@@ -11,8 +11,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config import (
-    SOURCE_DIR, OUTPUT_DIR, MODELS_DIR, APP_VERSION, APP_NAME,
-    DEFAULT_LANGUAGE, DEFAULT_DEVICE, detect_device, get_gpu_info, resolve_device
+    MODELS_DIR, APP_VERSION, APP_NAME,
+    DEFAULT_LANGUAGE, DEFAULT_DEVICE, detect_device, get_gpu_info, resolve_device,
+    get_source_dir, get_output_dir, set_source_dir, set_output_dir,
+    reset_source_dir, reset_output_dir, _DEFAULT_SOURCE_DIR, _DEFAULT_OUTPUT_DIR
 )
 from ui import (
     banner, header, info, success, warning, error, bullet, confirm,
@@ -24,8 +26,8 @@ def ensure_directories():
     """Create required directories"""
     header("Directory Check")
     dirs = {
-        "source": SOURCE_DIR,
-        "output": OUTPUT_DIR,
+        "source": get_source_dir(),
+        "output": get_output_dir(),
         "models": MODELS_DIR,
     }
     for name, path in dirs.items():
@@ -188,22 +190,96 @@ def select_language(current: str | None) -> str | None:
 
 
 def open_folders():
-    """Open folders in file explorer"""
-    header("Open Folders")
+    """Open folders and set custom paths"""
+    header("Folders")
+
+    src = get_source_dir()
+    out = get_output_dir()
+    src_custom = src != _DEFAULT_SOURCE_DIR
+    out_custom = out != _DEFAULT_OUTPUT_DIR
+
     print()
-    bullet("source/ — video files for transcription", 1)
-    bullet("output/ — transcription results", 2)
-    bullet("Both folders", 3)
+    info(f"Source: {BRIGHT}{src}{RESET}" + (f"  {YELLOW}(custom){RESET}" if src_custom else ""))
+    info(f"Output: {BRIGHT}{out}{RESET}" + (f"  {YELLOW}(custom){RESET}" if out_custom else ""))
+    print()
+
+    bullet("Open source folder in explorer", 1)
+    bullet("Open output folder in explorer", 2)
+    bullet("Open both folders", 3)
+    print()
+    bullet(f"Set custom source folder", 4)
+    bullet(f"Set custom output folder", 5)
+    if src_custom or out_custom:
+        bullet(f"Reset to default folders", 6)
     print(f"\n  {BRIGHT}{CYAN}[0]{RESET}  Back\n")
 
     choice = input("  Select: ").strip()
+
     if choice == "1":
-        os.startfile(SOURCE_DIR)
+        if os.path.exists(src):
+            os.startfile(src)
+        else:
+            error(f"Folder does not exist: {src}")
     elif choice == "2":
-        os.startfile(OUTPUT_DIR)
+        if os.path.exists(out):
+            os.startfile(out)
+        else:
+            error(f"Folder does not exist: {out}")
     elif choice == "3":
-        os.startfile(SOURCE_DIR)
-        os.startfile(OUTPUT_DIR)
+        for d in (src, out):
+            if os.path.exists(d):
+                os.startfile(d)
+    elif choice == "4":
+        _set_custom_folder("source")
+    elif choice == "5":
+        _set_custom_folder("output")
+    elif choice == "6" and (src_custom or out_custom):
+        reset_source_dir()
+        reset_output_dir()
+        success(f"Reset to defaults:")
+        info(f"  Source: {get_source_dir()}")
+        info(f"  Output: {get_output_dir()}")
+
+
+def _set_custom_folder(folder_type: str):
+    """Set a custom source or output folder path"""
+    current = get_source_dir() if folder_type == "source" else get_output_dir()
+    header(f"Set Custom {folder_type.capitalize()} Folder")
+    print()
+    info(f"Current: {BRIGHT}{current}{RESET}")
+    info("Enter the full path to the folder, or leave empty to cancel.")
+    print()
+
+    path = input("  Path: ").strip().strip('"').strip("'")
+
+    if not path:
+        info("Cancelled.")
+        return
+
+    path = os.path.abspath(path)
+
+    if not os.path.exists(path):
+        warning(f"Folder does not exist: {path}")
+        if confirm("Create it?"):
+            try:
+                os.makedirs(path, exist_ok=True)
+                success(f"Created: {path}")
+            except Exception as e:
+                error(f"Failed to create folder: {e}")
+                return
+        else:
+            return
+
+    if not os.path.isdir(path):
+        error("The specified path is not a directory.")
+        return
+
+    if folder_type == "source":
+        set_source_dir(path)
+    else:
+        set_output_dir(path)
+
+    success(f"{folder_type.capitalize()} folder set to: {BRIGHT}{path}{RESET}")
 
 
 def main():

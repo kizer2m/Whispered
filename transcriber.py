@@ -5,7 +5,7 @@ import os
 import time
 import traceback
 
-from config import SOURCE_DIR, OUTPUT_DIR, VIDEO_EXTENSIONS, DEFAULT_LANGUAGE
+from config import get_source_dir, get_output_dir, VIDEO_EXTENSIONS, DEFAULT_LANGUAGE
 from ui import (
     info, success, warning, error, header, bullet, confirm,
     format_duration, format_size, progress_bar_simple,
@@ -15,14 +15,15 @@ from ui import (
 
 def scan_source_folder() -> list[dict]:
     """Scan source folder for video files"""
-    if not os.path.exists(SOURCE_DIR):
+    source = get_source_dir()
+    if not os.path.exists(source):
         return []
 
     files = []
-    for f in sorted(os.listdir(SOURCE_DIR)):
+    for f in sorted(os.listdir(source)):
         ext = os.path.splitext(f)[1].lower()
         if ext in VIDEO_EXTENSIONS:
-            full_path = os.path.join(SOURCE_DIR, f)
+            full_path = os.path.join(source, f)
             files.append({
                 "name": f,
                 "path": full_path,
@@ -37,7 +38,7 @@ def get_pending_files(files: list[dict]) -> list[dict]:
     """Get list of files not yet transcribed"""
     pending = []
     for f in files:
-        output_path = os.path.join(OUTPUT_DIR, f["basename"] + ".txt")
+        output_path = os.path.join(get_output_dir(), f["basename"] + ".txt")
         if not os.path.exists(output_path):
             pending.append(f)
     return pending
@@ -47,7 +48,7 @@ def get_completed_files(files: list[dict]) -> list[dict]:
     """Get list of already processed files"""
     completed = []
     for f in files:
-        output_path = os.path.join(OUTPUT_DIR, f["basename"] + ".txt")
+        output_path = os.path.join(get_output_dir(), f["basename"] + ".txt")
         if os.path.exists(output_path):
             completed.append(f)
     return completed
@@ -56,10 +57,12 @@ def get_completed_files(files: list[dict]) -> list[dict]:
 def show_files_status():
     """Show status of all files"""
     header("File Status")
+    info(f"Source: {get_source_dir()}")
+    info(f"Output: {get_output_dir()}")
 
     files = scan_source_folder()
     if not files:
-        warning("The source/ folder is empty or contains no video files.")
+        warning("The source folder is empty or contains no video files.")
         info(f"Supported formats: {', '.join(sorted(VIDEO_EXTENSIONS))}")
         return
 
@@ -72,7 +75,7 @@ def show_files_status():
 
     for f in files:
         size = format_size(f["size"])
-        output_path = os.path.join(OUTPUT_DIR, f["basename"] + ".txt")
+        output_path = os.path.join(get_output_dir(), f["basename"] + ".txt")
         if os.path.exists(output_path):
             status = f"{GREEN}✔ done{RESET}"
         else:
@@ -84,7 +87,7 @@ def show_files_status():
 
 def transcribe_file(model, file_info: dict, language: str | None = None) -> bool:
     """Transcribe a single file"""
-    output_path = os.path.join(OUTPUT_DIR, file_info["basename"] + ".txt")
+    output_path = os.path.join(get_output_dir(), file_info["basename"] + ".txt")
 
     try:
         # Detect model device
@@ -270,7 +273,7 @@ def retranscribe_file(model, language: str | None = None):
         idx = choice - 1
         if 0 <= idx < len(completed):
             f = completed[idx]
-            output_path = os.path.join(OUTPUT_DIR, f["basename"] + ".txt")
+            output_path = os.path.join(get_output_dir(), f["basename"] + ".txt")
             warning(f"File {f['basename']}.txt will be overwritten!")
             if confirm("Continue?"):
                 os.remove(output_path)
