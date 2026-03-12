@@ -2,14 +2,16 @@
 Whispered application configuration
 """
 import os
+import json
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DEFAULT_SOURCE_DIR = os.path.join(BASE_DIR, "source")
 _DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "output")
-MODELS_DIR = os.path.join(BASE_DIR, "models")
+MODELS_DIR          = os.path.join(BASE_DIR, "models")
+SETTINGS_FILE       = os.path.join(BASE_DIR, "settings.json")
 
-# ─── Mutable source/output paths (can be changed at runtime) ────────────────
+# ─── Mutable source/output paths (can be changed at runtime) ─────────────────
 SOURCE_DIR = _DEFAULT_SOURCE_DIR
 OUTPUT_DIR = _DEFAULT_OUTPUT_DIR
 
@@ -45,6 +47,7 @@ def get_source_dir() -> str:
 def get_output_dir() -> str:
     return OUTPUT_DIR
 
+
 # ─── Whisper Model ───────────────────────────────────────────────────────────
 # Available models: tiny, base, small, medium, large-v1, large-v2, large-v3, turbo
 DEFAULT_MODEL = "small"
@@ -59,12 +62,32 @@ VIDEO_EXTENSIONS = {
     ".m4v", ".mpg", ".mpeg", ".3gp", ".ts", ".mts"
 }
 
+# ─── Supported audio formats ────────────────────────────────────────────────
+AUDIO_EXTENSIONS = {
+    ".mp3", ".wav", ".flac", ".m4a", ".ogg", ".aac", ".wma",
+    ".opus", ".aiff", ".aif", ".amr"
+}
+
+# ─── All supported media formats ────────────────────────────────────────────
+ALL_MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
+
 # ─── Language (None = auto-detect) ──────────────────────────────────────────
 DEFAULT_LANGUAGE = None
 
+# ─── Translation mode (translate to English) ────────────────────────────────
+DEFAULT_TRANSLATE = False
+
+# ─── Recursive folder scanning ──────────────────────────────────────────────
+DEFAULT_RECURSIVE = False
+
+# ─── Export formats ─────────────────────────────────────────────────────────
+DEFAULT_EXPORT_TXT = True
+DEFAULT_EXPORT_SRT = True
+DEFAULT_EXPORT_VTT = True
+
 # ─── Application version ────────────────────────────────────────────────────
-APP_VERSION = "1.1.0"
-APP_NAME = "Whispered"
+APP_VERSION = "1.2.0"
+APP_NAME    = "Whispered"
 
 
 # ─── Device detection utilities ─────────────────────────────────────────────
@@ -86,9 +109,9 @@ def get_gpu_info() -> dict | None:
         if torch.cuda.is_available():
             props = torch.cuda.get_device_properties(0)
             return {
-                "name": torch.cuda.get_device_name(0),
-                "memory_gb": round(props.total_memory / (1024 ** 3), 1),
-                "cuda_version": torch.version.cuda,
+                "name":              torch.cuda.get_device_name(0),
+                "memory_gb":         round(props.total_memory / (1024 ** 3), 1),
+                "cuda_version":      torch.version.cuda,
                 "compute_capability": f"{props.major}.{props.minor}",
             }
     except Exception:
@@ -101,3 +124,42 @@ def resolve_device(device_setting: str) -> str:
     if device_setting == "auto":
         return detect_device()
     return device_setting
+
+
+# ─── Settings persistence ────────────────────────────────────────────────────
+
+_DEFAULTS = {
+    "model":      DEFAULT_MODEL,
+    "device":     DEFAULT_DEVICE,
+    "language":   DEFAULT_LANGUAGE,
+    "translate":  DEFAULT_TRANSLATE,
+    "recursive":  DEFAULT_RECURSIVE,
+    "export_txt": DEFAULT_EXPORT_TXT,
+    "export_srt": DEFAULT_EXPORT_SRT,
+    "export_vtt": DEFAULT_EXPORT_VTT,
+    "source_dir": None,   # None → use _DEFAULT_SOURCE_DIR
+    "output_dir": None,   # None → use _DEFAULT_OUTPUT_DIR
+}
+
+
+def load_settings() -> dict:
+    """Load settings from JSON; fills missing keys with defaults."""
+    settings = dict(_DEFAULTS)
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            settings.update({k: v for k, v in saved.items() if k in settings})
+        except Exception:
+            pass  # ignore corrupted settings
+    return settings
+
+
+def save_settings(settings: dict):
+    """Persist settings to JSON file."""
+    try:
+        to_save = {k: v for k, v in settings.items() if k in _DEFAULTS}
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(to_save, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass  # non-fatal — settings just won't persist

@@ -7,35 +7,39 @@ import shutil
 
 from colorama import init, Fore, Back, Style
 
-init(autoreset=True)
+# Proper Windows init: convert ANSI → Win32 calls, don't strip on other OSes
+init(autoreset=True, convert=(os.name == "nt"), strip=(os.name != "nt"))
 
 # ─── Colors and styles ──────────────────────────────────────────────────────
-CYAN = Fore.CYAN
-GREEN = Fore.GREEN
-YELLOW = Fore.YELLOW
-RED = Fore.RED
+CYAN    = Fore.CYAN
+GREEN   = Fore.GREEN
+YELLOW  = Fore.YELLOW
+RED     = Fore.RED
 MAGENTA = Fore.MAGENTA
-WHITE = Fore.WHITE
-DIM = Style.DIM
-BRIGHT = Style.BRIGHT
-RESET = Style.RESET_ALL
+WHITE   = Fore.WHITE
+DIM     = Style.DIM
+BRIGHT  = Style.BRIGHT
+RESET   = Style.RESET_ALL
 
 TERM_WIDTH = shutil.get_terminal_size((80, 24)).columns
 
 
 def banner(app_name: str, version: str):
     """Render ASCII banner"""
-    line = "═" * (TERM_WIDTH - 2)
+    inner = TERM_WIDTH - 2
+    line = "═" * inner
     print(f"\n{CYAN}╔{line}╗")
-    title = f"  🎙  {app_name} v{version}  — Video Transcription powered by Whisper  "
-    pad = TERM_WIDTH - 2 - len(title) + len(CYAN) + len(BRIGHT)
-    print(f"{CYAN}║{BRIGHT}{WHITE}{title}{' ' * max(pad, 0)}{CYAN}║")
+    title_plain = f"  🎙  {app_name} v{version}  — Video & Audio Transcription powered by Whisper  "
+    # Pad without counting ANSI escape codes in length
+    pad = max(inner - len(title_plain), 0)
+    print(f"{CYAN}║{BRIGHT}{WHITE}{title_plain}{' ' * pad}{CYAN}║")
     print(f"{CYAN}╚{line}╝{RESET}\n")
 
 
 def header(text: str):
     """Section header"""
-    print(f"\n{BRIGHT}{MAGENTA}{'─' * 3} {text} {'─' * (TERM_WIDTH - len(text) - 6)}{RESET}")
+    dashes = "─" * max(TERM_WIDTH - len(text) - 6, 2)
+    print(f"\n{BRIGHT}{MAGENTA}{'─' * 3} {text} {dashes}{RESET}")
 
 
 def info(text: str):
@@ -84,12 +88,22 @@ def confirm(prompt: str) -> bool:
 
 
 def format_duration(seconds: float) -> str:
-    """Format duration"""
+    """Format duration as Xh Xm Xs"""
     m, s = divmod(int(seconds), 60)
     h, m = divmod(m, 60)
     if h > 0:
         return f"{h}h {m:02d}m {s:02d}s"
     return f"{m}m {s:02d}s"
+
+
+def format_eta(elapsed_seconds: float, done: int, total: int) -> str:
+    """Return an ETA string like 'ETA 2m 34s' or 'ETA --:--' when unknown."""
+    if done <= 0 or total <= 0:
+        return "ETA --:--"
+    rate = elapsed_seconds / done          # seconds per file
+    remaining_files = total - done
+    eta_seconds = rate * remaining_files
+    return f"ETA {format_duration(eta_seconds)}"
 
 
 def format_size(size_bytes: int) -> str:

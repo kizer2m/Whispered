@@ -1,0 +1,12 @@
+{
+  "model": "large-v3-turbo",
+  "device": "cuda",
+  "language": null,
+  "translate": false,
+  "recursive": false,
+  "export_txt": true,
+  "export_srt": false,
+  "export_vtt": false,
+  "source_dir": null,
+  "output_dir": null
+}
