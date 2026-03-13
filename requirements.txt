@@ -2,3 +2,4 @@ openai-whisper>=20240930
 torch
 tqdm
 colorama
+deep-translator>=1.11.4

@@ -74,8 +74,12 @@ ALL_MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
 # ─── Language (None = auto-detect) ──────────────────────────────────────────
 DEFAULT_LANGUAGE = None
 
-# ─── Translation mode (translate to English) ────────────────────────────────
-DEFAULT_TRANSLATE = False
+# ─── Translation mode ──────────────────────────────────────────────────────
+# translate_engine: "off" | "whisper" (→EN only) | "deep" (any lang via DeepTranslator)
+# translate_target: BCP-47 target language code, used only when engine="deep"
+DEFAULT_TRANSLATE        = False
+DEFAULT_TRANSLATE_ENGINE = "off"    # "off" | "whisper" | "deep"
+DEFAULT_TRANSLATE_TARGET = "en"     # target language for deep-translator
 
 # ─── Recursive folder scanning ──────────────────────────────────────────────
 DEFAULT_RECURSIVE = False
@@ -129,16 +133,18 @@ def resolve_device(device_setting: str) -> str:
 # ─── Settings persistence ────────────────────────────────────────────────────
 
 _DEFAULTS = {
-    "model":      DEFAULT_MODEL,
-    "device":     DEFAULT_DEVICE,
-    "language":   DEFAULT_LANGUAGE,
-    "translate":  DEFAULT_TRANSLATE,
-    "recursive":  DEFAULT_RECURSIVE,
-    "export_txt": DEFAULT_EXPORT_TXT,
-    "export_srt": DEFAULT_EXPORT_SRT,
-    "export_vtt": DEFAULT_EXPORT_VTT,
-    "source_dir": None,   # None → use _DEFAULT_SOURCE_DIR
-    "output_dir": None,   # None → use _DEFAULT_OUTPUT_DIR
+    "model":             DEFAULT_MODEL,
+    "device":            DEFAULT_DEVICE,
+    "language":          DEFAULT_LANGUAGE,
+    "translate":         DEFAULT_TRANSLATE,
+    "translate_engine":  DEFAULT_TRANSLATE_ENGINE,
+    "translate_target":  DEFAULT_TRANSLATE_TARGET,
+    "recursive":         DEFAULT_RECURSIVE,
+    "export_txt":        DEFAULT_EXPORT_TXT,
+    "export_srt":        DEFAULT_EXPORT_SRT,
+    "export_vtt":        DEFAULT_EXPORT_VTT,
+    "source_dir":        None,   # None → use _DEFAULT_SOURCE_DIR
+    "output_dir":        None,   # None → use _DEFAULT_OUTPUT_DIR
 }
 
 

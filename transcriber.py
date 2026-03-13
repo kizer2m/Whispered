@@ -1,9 +1,12 @@
 """
 Transcription engine — video & audio file processing
 """
+from __future__ import annotations
+
 import os
 import time
 import traceback
+from typing import TYPE_CHECKING
 
 from config import (
     get_source_dir, get_output_dir,
@@ -12,8 +15,44 @@ from config import (
 from ui import (
     info, success, warning, error, header, bullet, confirm,
     format_duration, format_eta, format_size, progress_bar_simple,
-    BRIGHT, CYAN, GREEN, YELLOW, RED, RESET, DIM,
+    progress_bar_inline,
+    BRIGHT, CYAN, GREEN, YELLOW, RED, MAGENTA, RESET, DIM,
 )
+
+
+# ─── DeepTranslator helper ────────────────────────────────────────────────────
+
+def _deep_translate_segments(
+    segments: list[dict],
+    target_lang: str,
+) -> list[dict]:
+    """Translate *text* of every segment using GoogleTranslator (deep-translator).
+
+    Returns a NEW list of segment dicts with translated text.
+    Segments whose text is empty/whitespace are left unchanged.
+    On import failure raises ImportError so the caller can surface it.
+    """
+    from deep_translator import GoogleTranslator  # type: ignore
+
+    translator = GoogleTranslator(source="auto", target=target_lang)
+    translated = []
+    total = len(segments)
+    for i, seg in enumerate(segments, 1):
+        raw = seg.get("text", "").strip()
+        if raw:
+            try:
+                new_text = translator.translate(raw) or raw
+            except Exception:
+                new_text = raw          # keep original on per-segment error
+        else:
+            new_text = raw
+        translated.append({**seg, "text": " " + new_text})
+        progress_bar_inline(
+            i, total,
+            prefix=f"segment {i}/{total}",
+            done=(i == total),
+        )
+    return translated
 
 
 # ─── Timestamp helpers ───────────────────────────────────────────────────────
@@ -198,9 +237,22 @@ def show_files_status(recursive: bool = False,
 
 # ─── Export helpers ──────────────────────────────────────────────────────────
 
-def _write_txt(path: str, file_name: str, lang: str, elapsed: float,
-               text: str, segments: list, translate: bool):
-    mode = "Translation → English" if translate else "Transcription"
+def _write_txt(
+    path: str,
+    file_name: str,
+    lang: str,
+    elapsed: float,
+    text: str,
+    segments: list,
+    translate_engine: str = "off",
+    translate_target: str = "en",
+):
+    if translate_engine == "whisper":
+        mode = "Translation → English  [Whisper]"
+    elif translate_engine == "deep":
+        mode = f"Translation → {translate_target.upper()}  [DeepTranslator]"
+    else:
+        mode = "Transcription"
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"# {mode}: {file_name}\n")
         f.write(f"# Language: {lang}\n")
@@ -243,21 +295,29 @@ def transcribe_file(
     export_txt: bool = True,
     export_srt: bool = True,
     export_vtt: bool = True,
+    translate_engine: str = "off",
+    translate_target: str = "en",
 ) -> bool:
     """Transcribe (or translate) a single media file and write requested outputs.
 
     Args:
-        model:      Loaded Whisper model.
-        file_info:  Dict from scan_source_folder().
-        language:   BCP-47 language code or None for auto-detect.
-        translate:  If True, Whisper translates audio → English text.
-        export_txt: Write a human-readable .txt file.
-        export_srt: Write a SubRip .srt subtitle file.
-        export_vtt: Write a WebVTT .vtt subtitle file.
+        model:            Loaded Whisper model.
+        file_info:        Dict from scan_source_folder().
+        language:         BCP-47 language code or None for auto-detect.
+        translate:        Legacy flag — True when translate_engine=='whisper'.
+        export_txt:       Write a human-readable .txt file.
+        export_srt:       Write a SubRip .srt subtitle file.
+        export_vtt:       Write a WebVTT .vtt subtitle file.
+        translate_engine: "off" | "whisper" | "deep"
+        translate_target: BCP-47 target lang for DeepTranslator (e.g. "ru").
 
     Returns:
         True on success, False on failure.
     """
+    # Normalise: if caller still passes old bool only, infer engine
+    if translate and translate_engine == "off":
+        translate_engine = "whisper"
+
     if not any([export_txt, export_srt, export_vtt]):
         warning("No output formats selected — skipping.")
         return False
@@ -274,26 +334,51 @@ def transcribe_file(
         dev_label = f"GPU ({device})" if is_gpu else "CPU"
         icon      = "♪" if file_info["is_audio"] else "▶"
 
+        # Build translation label for the progress line
+        if translate_engine == "whisper":
+            tmode_lbl = f"  |  {YELLOW}Whisper → EN{RESET}"
+        elif translate_engine == "deep":
+            tmode_lbl = f"  |  {MAGENTA}Deep → {translate_target.upper()}{RESET}"
+        else:
+            tmode_lbl = ""
+
         info(f"{icon} Transcribing: {BRIGHT}{file_info['name']}{RESET}")
-        info(f"Size: {format_size(file_info['size'])}  |  Device: {dev_label}"
-             + (f"  |  {YELLOW}Translation → EN{RESET}" if translate else ""))
+        info(f"Size: {format_size(file_info['size'])}  |  Device: {dev_label}{tmode_lbl}")
 
         start_time = time.time()
 
+        # Whisper task: use "translate" only for built-in Whisper translation
+        whisper_task = "translate" if translate_engine == "whisper" else "transcribe"
         options: dict = {
             "verbose": False,
             "fp16":    is_gpu,
-            "task":    "translate" if translate else "transcribe",
+            "task":    whisper_task,
         }
         if language:
             options["language"] = language
 
         result = model.transcribe(file_info["path"], **options)
 
-        elapsed      = time.time() - start_time
-        text         = result["text"].strip()
-        detected_lang = result.get("language", "?")
-        segments     = result.get("segments", [])
+        whisper_elapsed = time.time() - start_time
+        text            = result["text"].strip()
+        detected_lang   = result.get("language", "?")
+        segments        = result.get("segments", [])
+
+        # ── DeepTranslator post-processing ────────────────────────────────────
+        if translate_engine == "deep":
+            try:
+                info(f"Running DeepTranslator → {translate_target.upper()} …")
+                deep_start = time.time()
+                segments   = _deep_translate_segments(segments, translate_target)
+                text       = " ".join(s["text"].strip() for s in segments)
+                deep_elapsed = time.time() - deep_start
+                info(f"DeepTranslator done in {format_duration(deep_elapsed)}")
+            except ImportError:
+                error("deep-translator not installed. Run: pip install deep-translator")
+                warning("Falling back to untranslated output.")
+                translate_engine = "off"
+
+        elapsed = time.time() - start_time
 
         # Ensure sub-directory of output exists (for recursive source trees)
         os.makedirs(out_dir, exist_ok=True)
@@ -301,7 +386,8 @@ def transcribe_file(
         saved = []
         if export_txt:
             _write_txt(txt_path, file_info["name"], detected_lang,
-                       elapsed, text, segments, translate)
+                       elapsed, text, segments,
+                       translate_engine, translate_target)
             saved.append("txt")
         if export_srt:
             _write_srt(srt_path, segments)
@@ -310,7 +396,6 @@ def transcribe_file(
             _write_vtt(vtt_path, segments)
             saved.append("vtt")
 
-        mode_label = "translated" if translate else "transcribed"
         success(f"Done in {format_duration(elapsed)} | "
                 f"Language: {detected_lang} | "
                 f"Saved: {', '.join(f'.{s}' for s in saved)}")
@@ -332,6 +417,8 @@ def transcribe_all(
     export_txt: bool = True,
     export_srt: bool = True,
     export_vtt: bool = True,
+    translate_engine: str = "off",
+    translate_target: str = "en",
 ) -> tuple[int, int]:
     """Transcribe all pending media files."""
     header("Batch Transcription")
@@ -349,8 +436,10 @@ def transcribe_all(
     info(f"Total size: {format_size(total_size)}")
     if recursive:
         info("Recursive mode: ON")
-    if translate:
-        info(f"Mode: {YELLOW}Translate → English{RESET}")
+    if translate_engine == "whisper":
+        info(f"Mode: {YELLOW}Whisper Translate → English{RESET}")
+    elif translate_engine == "deep":
+        info(f"Mode: {MAGENTA}DeepTranslator → {translate_target.upper()}{RESET}")
     fmts = [s for s, v in [("txt", export_txt), ("srt", export_srt), ("vtt", export_vtt)] if v]
     info(f"Export formats: {', '.join(f'.{f}' for f in fmts)}")
     print()
@@ -368,7 +457,11 @@ def transcribe_all(
         eta = format_eta(elapsed_so_far, i - 1, total)
         print(f"\n  {BRIGHT}{CYAN}[{i}/{total}]{RESET}  {DIM}{eta}{RESET}"
               f"  ──────────────────────────────────")
-        if transcribe_file(model, f, language, translate, export_txt, export_srt, export_vtt):
+        if transcribe_file(
+            model, f, language, translate,
+            export_txt, export_srt, export_vtt,
+            translate_engine, translate_target,
+        ):
             ok_count += 1
         else:
             fail_count += 1
@@ -392,6 +485,8 @@ def transcribe_selected(
     export_txt: bool = True,
     export_srt: bool = True,
     export_vtt: bool = True,
+    translate_engine: str = "off",
+    translate_target: str = "en",
 ):
     """Interactively select and transcribe specific files."""
     header("Select Files to Transcribe")
@@ -420,7 +515,11 @@ def transcribe_selected(
     if choice == "0":
         return
     if choice.lower() == "a":
-        transcribe_all(model, language, translate, recursive, export_txt, export_srt, export_vtt)
+        transcribe_all(
+            model, language, translate, recursive,
+            export_txt, export_srt, export_vtt,
+            translate_engine, translate_target,
+        )
         return
 
     try:
@@ -444,7 +543,11 @@ def transcribe_selected(
         eta = format_eta(elapsed_so_far, i - 1, len(selected))
         print(f"\n  {BRIGHT}{CYAN}[{i}/{len(selected)}]{RESET}  {DIM}{eta}{RESET}"
               f"  ──────────────────────────────────")
-        if transcribe_file(model, f, language, translate, export_txt, export_srt, export_vtt):
+        if transcribe_file(
+            model, f, language, translate,
+            export_txt, export_srt, export_vtt,
+            translate_engine, translate_target,
+        ):
             ok += 1
         else:
             fail += 1
@@ -464,6 +567,8 @@ def retranscribe_file(
     export_txt: bool = True,
     export_srt: bool = True,
     export_vtt: bool = True,
+    translate_engine: str = "off",
+    translate_target: str = "en",
 ):
     """Re-transcribe an already processed file (overwrites outputs)."""
     header("Re-transcription")
@@ -502,7 +607,11 @@ def retranscribe_file(
             if confirm("Continue?"):
                 for p in existing:
                     os.remove(p)
-                transcribe_file(model, f, language, translate, export_txt, export_srt, export_vtt)
+                transcribe_file(
+                    model, f, language, translate,
+                    export_txt, export_srt, export_vtt,
+                    translate_engine, translate_target,
+                )
         else:
             error("Invalid selection.")
     except (ValueError, IndexError):

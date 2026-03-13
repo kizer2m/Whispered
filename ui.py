@@ -77,6 +77,31 @@ def progress_bar_simple(current: int, total: int, label: str = ""):
     sys.stdout.flush()
 
 
+def progress_bar_inline(
+    current: int,
+    total: int,
+    prefix: str = "",
+    bar_len: int = 28,
+    done: bool = False,
+):
+    """In-place progress bar for tight processing loops (e.g. per-segment translation).
+
+    Rewrites the current line with \\r; call with done=True on the final step
+    to flush a newline.
+    """
+    pct = current / total if total > 0 else 0
+    filled = int(bar_len * pct)
+    bar = "█" * filled + "░" * (bar_len - filled)
+    counter = f"{current}/{total}"
+    line = f"\r  {MAGENTA}{bar}{RESET}  {pct * 100:5.1f}%  {counter}"
+    if prefix:
+        line += f"  {DIM}{prefix}{RESET}"
+    sys.stdout.write(line)
+    if done or current >= total:
+        sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
 def confirm(prompt: str) -> bool:
     """Ask user for confirmation"""
     while True:

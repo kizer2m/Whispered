@@ -30,16 +30,18 @@ def _state_to_settings(state: dict) -> dict:
     src = get_source_dir()
     out = get_output_dir()
     return {
-        "model":      state.get("model_name"),
-        "device":     state.get("device", DEFAULT_DEVICE),
-        "language":   state.get("language"),
-        "translate":  state.get("translate", False),
-        "recursive":  state.get("recursive", False),
-        "export_txt": state.get("export_txt", True),
-        "export_srt": state.get("export_srt", True),
-        "export_vtt": state.get("export_vtt", True),
-        "source_dir": src if src != _DEFAULT_SOURCE_DIR else None,
-        "output_dir": out if out != _DEFAULT_OUTPUT_DIR else None,
+        "model":            state.get("model_name"),
+        "device":           state.get("device", DEFAULT_DEVICE),
+        "language":         state.get("language"),
+        "translate":        state.get("translate", False),
+        "translate_engine": state.get("translate_engine", "off"),
+        "translate_target": state.get("translate_target", "en"),
+        "recursive":        state.get("recursive", False),
+        "export_txt":       state.get("export_txt", True),
+        "export_srt":       state.get("export_srt", True),
+        "export_vtt":       state.get("export_vtt", True),
+        "source_dir":       src if src != _DEFAULT_SOURCE_DIR else None,
+        "output_dir":       out if out != _DEFAULT_OUTPUT_DIR else None,
     }
 
 
@@ -97,9 +99,14 @@ def show_main_menu(state: dict):
     else:
         device_status = f"{YELLOW}💻 CPU{RESET}"
 
+    translate_engine = state.get("translate_engine", "off")
+    translate_target = state.get("translate_target", "en")
+
     mode_parts = []
-    if translate:
-        mode_parts.append(f"{YELLOW}↩ Translate→EN{RESET}")
+    if translate_engine == "whisper":
+        mode_parts.append(f"{YELLOW}↩ Whisper→EN{RESET}")
+    elif translate_engine == "deep":
+        mode_parts.append(f"{MAGENTA}↩ Deep→{translate_target.upper()}{RESET}")
     if recursive:
         mode_parts.append(f"{CYAN}↻ Recursive{RESET}")
     fmts = []
@@ -120,6 +127,22 @@ def show_main_menu(state: dict):
     print(f"  {BRIGHT}{CYAN}{'═' * 52}{RESET}")
     print()
 
+    # ── derive labels for item 8 ──────────────────────────────────────────────
+    translate_engine = state.get("translate_engine", "off")
+    translate_target = state.get("translate_target", "en")
+    if translate_engine == "off":
+        t8_icon  = "🔇"
+        t8_title = "Translation mode"
+        t8_desc  = f"Translate transcribed text  [{RED}OFF{RESET}]"
+    elif translate_engine == "whisper":
+        t8_icon  = "⬇"
+        t8_title = "Translation mode"
+        t8_desc  = f"Whisper built-in  [{YELLOW}→ EN{RESET}]"
+    else:  # deep
+        t8_icon  = "⬇"
+        t8_title = "Translation mode"
+        t8_desc  = f"DeepTranslator  [{MAGENTA}→ {translate_target.upper()}{RESET}]"
+
     items = [
         ("1",  "📋  File Status",
                f"View files in source folder{' (recursive)' if recursive else ''}"),
@@ -135,8 +158,7 @@ def show_main_menu(state: dict):
                f"Current: {language if language else 'auto-detect'}"),
         ("7",  "⚡  Switch CPU / GPU",
                f"Current: {'GPU (CUDA)' if device == 'cuda' else 'CPU'}"),
-        ("8",  f"{'⬇' if translate else '⬆'}  Translation mode",
-               f"Translate audio → English  [{_bool_label(translate)}]"),
+        ("8",  f"{t8_icon}  {t8_title}", t8_desc),
         ("9",  f"{'⬇' if recursive else '↗'}  Recursive scan",
                f"Include sub-folders in source  [{_bool_label(recursive)}]"),
         ("10", "📄  Export formats",
@@ -263,22 +285,197 @@ def select_language(current: str | None) -> str | None:
     return current
 
 
-def toggle_translate(current: bool) -> bool:
-    """Toggle translation mode."""
+# ─── DeepTranslator-powered language list ────────────────────────────────────
+
+_DEEP_LANGUAGES = [
+    ("af",  "Afrikaans"),
+    ("sq",  "Albanian"),
+    ("ar",  "Arabic"),
+    ("hy",  "Armenian"),
+    ("az",  "Azerbaijani"),
+    ("eu",  "Basque"),
+    ("be",  "Belarusian"),
+    ("bn",  "Bengali"),
+    ("bs",  "Bosnian"),
+    ("bg",  "Bulgarian"),
+    ("ca",  "Catalan"),
+    ("zh-CN", "Chinese (Simplified)"),
+    ("zh-TW", "Chinese (Traditional)"),
+    ("hr",  "Croatian"),
+    ("cs",  "Czech"),
+    ("da",  "Danish"),
+    ("nl",  "Dutch"),
+    ("en",  "English"),
+    ("eo",  "Esperanto"),
+    ("et",  "Estonian"),
+    ("fi",  "Finnish"),
+    ("fr",  "French"),
+    ("gl",  "Galician"),
+    ("ka",  "Georgian"),
+    ("de",  "German"),
+    ("el",  "Greek"),
+    ("gu",  "Gujarati"),
+    ("ht",  "Haitian Creole"),
+    ("he",  "Hebrew"),
+    ("hi",  "Hindi"),
+    ("hu",  "Hungarian"),
+    ("is",  "Icelandic"),
+    ("id",  "Indonesian"),
+    ("ga",  "Irish"),
+    ("it",  "Italian"),
+    ("ja",  "Japanese"),
+    ("kn",  "Kannada"),
+    ("kk",  "Kazakh"),
+    ("ko",  "Korean"),
+    ("lv",  "Latvian"),
+    ("lt",  "Lithuanian"),
+    ("mk",  "Macedonian"),
+    ("ms",  "Malay"),
+    ("ml",  "Malayalam"),
+    ("mt",  "Maltese"),
+    ("mn",  "Mongolian"),
+    ("ne",  "Nepali"),
+    ("nb",  "Norwegian"),
+    ("fa",  "Persian"),
+    ("pl",  "Polish"),
+    ("pt",  "Portuguese"),
+    ("pa",  "Punjabi"),
+    ("ro",  "Romanian"),
+    ("ru",  "Russian"),
+    ("sr",  "Serbian"),
+    ("si",  "Sinhala"),
+    ("sk",  "Slovak"),
+    ("sl",  "Slovenian"),
+    ("es",  "Spanish"),
+    ("sw",  "Swahili"),
+    ("sv",  "Swedish"),
+    ("tl",  "Tagalog"),
+    ("ta",  "Tamil"),
+    ("te",  "Telugu"),
+    ("th",  "Thai"),
+    ("tr",  "Turkish"),
+    ("uk",  "Ukrainian"),
+    ("ur",  "Urdu"),
+    ("uz",  "Uzbek"),
+    ("vi",  "Vietnamese"),
+    ("cy",  "Welsh"),
+    ("xh",  "Xhosa"),
+    ("yi",  "Yiddish"),
+    ("zu",  "Zulu"),
+]
+
+
+def select_translate_mode(
+    engine: str, target: str
+) -> tuple[str, str, bool]:
+    """Three-way translation mode menu.
+
+    Returns:
+        (engine, target, translate_flag)
+        engine: "off" | "whisper" | "deep"
+        target: BCP-47 language code (only meaningful when engine=="deep")
+        translate_flag: legacy bool for Whisper task field
+    """
     header("Translation Mode")
-    info("When ON, Whisper translates any language → English text.")
-    info("When OFF, Whisper transcribes in the original language.")
+
     print()
-    current_label = f"{GREEN}ON{RESET}" if current else f"{RED}OFF{RESET}"
-    info(f"Current: {current_label}")
+    # Current state label
+    if engine == "off":
+        cur = f"{RED}OFF{RESET}"
+    elif engine == "whisper":
+        cur = f"{YELLOW}Whisper → EN{RESET}"
+    else:
+        tname = next((n for c, n in _DEEP_LANGUAGES if c == target), target.upper())
+        cur = f"{MAGENTA}DeepTranslator → {tname} ({target}){RESET}"
+    info(f"Current: {cur}")
     print()
-    if confirm("Toggle translation mode?"):
-        new_val = not current
-        label = f"{GREEN}ON{RESET}" if new_val else f"{RED}OFF{RESET}"
-        success(f"Translation mode: {label}")
-        return new_val
-    info("Unchanged.")
-    return current
+
+    print(f"  {BRIGHT}{CYAN}[ 1]{RESET}  {RED}OFF{RESET}")
+    print(f"        {DIM}Transcribe in original language — no translation.{RESET}")
+    print()
+    print(f"  {BRIGHT}{CYAN}[ 2]{RESET}  {YELLOW}Whisper built-in  → English only{RESET}")
+    print(f"        {DIM}Uses Whisper's own translate task. Fast, no internet."
+          f" Target is always English.{RESET}")
+    print()
+    print(f"  {BRIGHT}{CYAN}[ 3]{RESET}  {MAGENTA}DeepTranslator  → any language{RESET}")
+    print(f"        {DIM}Post-processes Whisper output via Google Translate (free)."
+          f" Internet required.{RESET}")
+    print()
+    print(f"  {BRIGHT}{CYAN}[ 0]{RESET}  Back (keep current)")
+    print()
+
+    choice = input("  Select mode: ").strip()
+
+    if choice == "0":
+        info("Unchanged.")
+        return engine, target, (engine != "off")
+
+    if choice == "1":
+        success(f"Translation: {RED}OFF{RESET}")
+        return "off", target, False
+
+    if choice == "2":
+        success(f"Translation: {YELLOW}Whisper → EN{RESET}")
+        return "whisper", target, True
+
+    if choice == "3":
+        # Sub-menu: pick target language
+        new_target = _pick_deep_language(target)
+        tname = next((n for c, n in _DEEP_LANGUAGES if c == new_target), new_target)
+        success(f"Translation: {MAGENTA}DeepTranslator → {tname} ({new_target}){RESET}")
+        return "deep", new_target, False   # translate=False → Whisper transcribes normally
+
+    warning("Invalid choice — unchanged.")
+    return engine, target, (engine != "off")
+
+
+def _pick_deep_language(current: str) -> str:
+    """Sub-menu: choose target language for DeepTranslator."""
+    header("Select Target Language (DeepTranslator)")
+    print()
+
+    # Display paginated list (25 per page)
+    PAGE = 25
+    page = 0
+    total_pages = (len(_DEEP_LANGUAGES) + PAGE - 1) // PAGE
+
+    while True:
+        start = page * PAGE
+        chunk = _DEEP_LANGUAGES[start:start + PAGE]
+
+        for i, (code, name) in enumerate(chunk, start + 1):
+            marker = f"  {GREEN}← current{RESET}" if code == current else ""
+            print(f"  {BRIGHT}{CYAN}[{i:>3}]{RESET}  {name} ({code}){marker}")
+
+        print()
+        nav = []
+        if page > 0:
+            nav.append(f"{BRIGHT}{CYAN}[p]{RESET} Prev")
+        if page < total_pages - 1:
+            nav.append(f"{BRIGHT}{CYAN}[n]{RESET} Next")
+        nav.append(f"{BRIGHT}{CYAN}[0]{RESET} Keep current ({current})")
+        print("  " + "   ".join(nav))
+        print()
+
+        choice = input("  Enter number or nav: ").strip().lower()
+
+        if choice == "0":
+            return current
+        if choice == "n" and page < total_pages - 1:
+            page += 1
+            continue
+        if choice == "p" and page > 0:
+            page -= 1
+            continue
+
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(_DEEP_LANGUAGES):
+                return _DEEP_LANGUAGES[idx][0]
+        except ValueError:
+            pass
+
+        warning("Invalid input — try again.")
 
 
 def toggle_recursive(current: bool) -> bool:
@@ -512,15 +709,17 @@ def main():
 
     # 6. Runtime state
     state: dict = {
-        "model_name":   current_model_name,
-        "model_loaded": model_loaded,
-        "device":       device,
-        "language":     settings.get("language"),
-        "translate":    settings.get("translate", False),
-        "recursive":    settings.get("recursive", False),
-        "export_txt":   settings.get("export_txt", True),
-        "export_srt":   settings.get("export_srt", True),
-        "export_vtt":   settings.get("export_vtt", True),
+        "model_name":        current_model_name,
+        "model_loaded":      model_loaded,
+        "device":            device,
+        "language":          settings.get("language"),
+        "translate":         settings.get("translate", False),
+        "translate_engine":  settings.get("translate_engine", "off"),
+        "translate_target":  settings.get("translate_target", "en"),
+        "recursive":         settings.get("recursive", False),
+        "export_txt":        settings.get("export_txt", True),
+        "export_srt":        settings.get("export_srt", True),
+        "export_vtt":        settings.get("export_vtt", True),
     }
 
     save_settings(_state_to_settings(state))
@@ -557,6 +756,8 @@ def main():
                     export_txt=state["export_txt"],
                     export_srt=state["export_srt"],
                     export_vtt=state["export_vtt"],
+                    translate_engine=state.get("translate_engine", "off"),
+                    translate_target=state.get("translate_target", "en"),
                 )
 
         # ③ Select files
@@ -572,6 +773,8 @@ def main():
                     export_txt=state["export_txt"],
                     export_srt=state["export_srt"],
                     export_vtt=state["export_vtt"],
+                    translate_engine=state.get("translate_engine", "off"),
+                    translate_target=state.get("translate_target", "en"),
                 )
 
         # ④ Re-transcribe
@@ -587,6 +790,8 @@ def main():
                     export_txt=state["export_txt"],
                     export_srt=state["export_srt"],
                     export_vtt=state["export_vtt"],
+                    translate_engine=state.get("translate_engine", "off"),
+                    translate_target=state.get("translate_target", "en"),
                 )
 
         # ⑤ Model management
@@ -633,9 +838,15 @@ def main():
                                 state["model_loaded"] = False
                 save_settings(_state_to_settings(state))
 
-        # ⑧ Translation mode toggle
+        # ⑧ Translation mode (3-way)
         elif choice == "8":
-            state["translate"] = toggle_translate(state["translate"])
+            eng, tgt, tfl = select_translate_mode(
+                state.get("translate_engine", "off"),
+                state.get("translate_target", "en"),
+            )
+            state["translate_engine"] = eng
+            state["translate_target"] = tgt
+            state["translate"]        = tfl
             save_settings(_state_to_settings(state))
 
         # ⑨ Recursive scan toggle
